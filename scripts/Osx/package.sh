@@ -10,7 +10,7 @@ appname="scalus"
 publishdir=""
 isrelease=""
 scalusmacdir=""
-
+filenameCodeSigning=""
 
 PARAMS=""
 while(( "$#" )); do
@@ -127,8 +127,9 @@ tmpdir="${outpath}/tmp"
 
 function resetInfo()
 {
-
+    
     filename="${tmpdir}/${appname}.app/Contents/Info.plist"
+    echo "Reset info file: ${filename}"
     if [ ! -f ${filename} ]; then 
     echo "ERROR - missing file:${filename}"
         exit 1
@@ -181,6 +182,22 @@ function resetInfo()
     chmod a+r $filename
 }
 
+function resetCodeSigningInfo()
+{
+    cd ${scalusmacdir}
+    cd ..
+    cd scripts/Osx/${appname}.app/Contents
+    cp CodeSignInfo.plist ${tmpdir}/${appname}.app/Contents/CodeSignInfo.plist
+    chmod a+r ${tmpdir}/${appname}.app/Contents/CodeSignInfo.plist
+    filenameCodeSigning="${tmpdir}/${appname}.app/Contents/CodeSignInfo.plist"
+    if [ ! -f ${filenameCodeSigning} ]; then 
+        echo "ERROR - missing file:${filenameCodeSigning}"
+        exit 1
+    fi 
+   
+    chmod a+r ${filenameCodeSigning}
+}
+
 function make_app()
 {
     if [ -d ${tmpdir} ]; then 
@@ -200,23 +217,29 @@ fi
 
     osacompile -o ${tmpdir}/${appname}.app ${infile}
     resetInfo
+    resetCodeSigningInfo  
+    cd $publishdir
+    ls
 
-    cp $publishdir/scalus ${tmpdir}/${appname}.app/Contents/MacOS
+    cp $publishdir/* ${tmpdir}/${appname}.app/Contents/MacOS
+    chmod u=rwx,go=rx ${tmpdir}/${appname}.app/Contents/MacOS/*
+
+    cp -f $publishdir/scalus ${tmpdir}/${appname}.app/Contents/MacOS 
     chmod u=rwx,go=rx  ${tmpdir}/${appname}.app/Contents/MacOS/scalus
 
-    cp $scalusmacdir/.build/release/scalusmac ${tmpdir}/${appname}.app/Contents/MacOS
+    cp -f $scalusmacdir/.build/release/scalusmac ${tmpdir}/${appname}.app/Contents/MacOS
     chmod u=rwx,go=rx  ${tmpdir}/${appname}.app/Contents/MacOS/scalusmac
 
     mkdir -p ${tmpdir}/${appname}.app/Contents/MacOS/Ui
     chmod a+rx ${tmpdir}/${appname}.app/Contents/MacOS/Ui
 
-    cp -R $publishdir/Ui/ ${tmpdir}/${appname}.app/Contents/MacOS/Ui
+    cp -f -R $publishdir/Ui/ ${tmpdir}/${appname}.app/Contents/MacOS/Ui
     chmod a+r ${tmpdir}/${appname}.app/Contents/MacOS/Ui/*
 
     mkdir -p ${tmpdir}/${appname}.app/Contents/Resources/examples
     chmod a+rx ${tmpdir}/${appname}.app/Contents/Resources/Examples
 
-    cp $publishdir/examples/*  ${tmpdir}/${appname}.app/Contents/Resources/examples
+    cp -f $publishdir/examples/*  ${tmpdir}/${appname}.app/Contents/Resources/examples
     chmod a+r ${tmpdir}/${appname}.app/Contents/Resources/examples/*
 
     if [ "$isrelease" = "False" ]; then
@@ -224,25 +247,28 @@ fi
     else
         # CodeSigning the files in the app bundle
         shopt -s globstar
+        codesign --force --entitlements ${tmpdir}/${appname}.app/Contents/CodeSignInfo.plist -s LDBTVAT43D -v "${tmpdir}/${appname}.app" --deep  --strict --options=runtime --timestamp 
+       
+        codesign -vvv --deep --strict "${tmpdir}/${appname}.app"
+        echo "[INFO] Code signing verified for ${tmpdir}/${appname}.app"
         for file_path in ${tmpdir}/${appname}.app/**/*; do
             if [[ -f "$file_path" ]]; then # Check if it's a regular file
-                echo "Processing file: $file_path"
-                if codesign --force -s LDBTVAT43D -v "${file_path}" --deep --strict --options=runtime --timestamp > /dev/null 2>&1; then 
-                    echo "[INFO] Code signing succeeded for ${file_path}"
-                    continue
-                else
-                    codesign --remove-signature "${file_path}"
-                    if codesign --force -s LDBTVAT43D -v "${file_path}" --deep --strict --options=runtime --timestamp > /dev/null 2>&1; then 
-                        echo "[INFO] Code signing succeeded for ${file_path}"
-                        continue
-                    else
-                        echo "[ERROR] Code signing failed for ${file_path}"
-                        continue
-                    fi                               
-                fi
+               echo "Processing file: $file_path"
+               codesign --force -s LDBTVAT43D -v "${file_path}" --strict --options=runtime --timestamp
+               codesign -vvv --deep --strict "${file_path}"
+               echo "[INFO] Code signing succeeded for ${file_path}"
+               continue
             fi
         done
+        xattr -rd com.apple.quarantine "${tmpdir}/${appname}.app"
     fi
+
+    chmod u=rwx,go=rx  ${tmpdir}/${appname}.app/Contents/MacOS/scalus
+    chmod u=rwx,go=rx  ${tmpdir}/${appname}.app/Contents/MacOS/scalusmac
+    chmod a+rx ${tmpdir}/${appname}.app/Contents/MacOS/Ui
+    chmod a+r ${tmpdir}/${appname}.app/Contents/MacOS/Ui/*
+    chmod a+rx ${tmpdir}/${appname}.app/Contents/Resources/Examples
+    chmod a+r ${tmpdir}/${appname}.app/Contents/Resources/examples/*
 
     here=`pwd`
     cd $tmpdir

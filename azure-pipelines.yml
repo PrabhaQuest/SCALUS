@@ -110,7 +110,7 @@ jobs:
 
   - task: UseDotNet@2
     inputs:
-        version: '6.0.x'
+        version: '8.0.x'
 
   - task: Cake@2
     inputs:
@@ -118,11 +118,11 @@ jobs:
       target: 'Default'
       verbosity: 'Verbose'
       version: '2.2.0'
-      arguments: '--runtime=win10-x64 --Edition=${{ parameters.edition }} --Version=$(version) --SignFiles=$(isRelease) --SignToolPath="$(signToolPath)"'
+      arguments: '--runtime=win-x64 --Edition=${{ parameters.edition }} --Version=$(version) --SignFiles=$(isRelease) --SignToolPath="$(signToolPath)"'
 
   - task: PublishPipelineArtifact@1
     inputs:
-      targetPath: '$(Pipeline.Workspace)/s/Output/Release/win10-x64'
+      targetPath: '$(Pipeline.Workspace)/s/Output/Release/win-x64'
       artifact: 'Scalus-Win10'
       publishLocation: 'pipeline'
 
@@ -133,7 +133,7 @@ jobs:
   steps:
   - task: UseDotNet@2
     inputs:
-        version: '6.0.x'
+        version: '8.0.x'
 
   - task: Cake@2
     inputs:
@@ -155,8 +155,11 @@ jobs:
     vmImage: 'macOS-latest'
   steps:
   - task: UseDotNet@2
+    displayName: 'Install .NET Core SDK'
     inputs:
-        version: '6.0.x'
+      packageType: 'sdk'
+      version: '8.0.x'
+      includePreviewVersions: false
 
   - task: Bash@3
     inputs:
@@ -219,6 +222,11 @@ jobs:
       Contents: '$(CodeSigningCertFileName)'
     condition: and(succeededOrFailed(), eq(variables.isRelease, true))
 
+  - task: NuGetToolInstaller@1
+    displayName: 'Use NuGet 6.0.0'
+    inputs:
+      versionSpec: 6.0.0
+
   - task: Bash@3
     inputs:
       filePath: '$(Pipeline.Workspace)/s/scripts/Osx/scalusmacBuild.sh'
@@ -226,7 +234,7 @@ jobs:
 
   - task: Cake@2
     inputs:
-      script: 'build.cake'
+      script: 'buildCore.cake'
       target: 'Default'
       verbosity: 'Verbose'
       version: '2.2.0'
@@ -258,36 +266,9 @@ jobs:
     displayName: 'Staple for pkg'
     condition: and(succeeded(), eq(variables.isRelease, true))
 
-  - powershell: |  
-      sudo productsign --sign 'LDBTVAT43D' $(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64.tar.gz $(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64_Signed.tar.gz
-    displayName: 'x64-ProductSigning for tar.gz'
-    condition: and(succeeded(), eq(variables.isRelease, true))
-    
-  - script: |
-        # Upload the zip archive to the Apple Notary Service
-        xcrun notarytool submit \
-            --apple-id "One.Identity.Apple.Developer@oneidentity.com" \
-            --password "$(Apple-App-Specific-Password)" \
-            --team-id "LDBTVAT43D" \
-            --wait \
-            $(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64_Signed.tar.gz \
-    displayName: 'Upload and notarize for tar.gz'
-    condition: and(succeeded(), eq(variables.isRelease, true))
-
   - powershell: |
-      sudo xcrun stapler staple $(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64_Signed.tar.gz
-    displayName: 'Staple tar.gz file'
-    condition: and(succeeded(), eq(variables.isRelease, true))
-
-  - powershell: |
-      spctl -vvv --assess --type install $(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64_Signed.tar.gz
-    displayName: 'Check if run with the system policies for tar.gz'
-    condition: and(succeeded(), eq(variables.isRelease, true))
-
-  - powershell: |
-      Move-Item -Path "$(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64_Signed.tar.gz" -Destination "$(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64.tar.gz" -Force
       Move-Item -Path "$(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64_Signed.pkg" -Destination "$(Pipeline.Workspace)/s/Output/Release/osx-x64/scalus-$(version)-osx-x64.pkg" -Force
-    displayName: 'Replace signed files of tar.gz and pkg'
+    displayName: 'Replace signed pkg'
     condition: and(succeeded(), eq(variables.isRelease, true))
 
   - task: PublishPipelineArtifact@1
